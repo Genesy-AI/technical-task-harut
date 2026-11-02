@@ -6,6 +6,38 @@ import { MessageTemplateModal } from './MessageTemplateModal'
 import { CsvImportModal } from './CsvImportModal'
 import { summarizeVerification } from '../utils/verificationSummary'
 
+const toPhoneHref = (phone: string) => {
+  const [number, extension] = phone.split(/x/i)
+  return `tel:${number.replace(/[^\d+]/g, '')}${extension ? `;ext=${extension}` : ''}`
+}
+
+// The backend only stores validated https URLs; re-checking keeps a javascript: URL from ever becoming a link.
+const toSafeHttpsUrl = (value: string) => {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+const LinkedinCell: FC<{ value: string | null }> = ({ value }) => {
+  const href = value ? toSafeHttpsUrl(value) : null
+  if (!href) return <div className="text-sm text-gray-900">-</div>
+
+  return (
+    <a
+      href={href}
+      title={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sm text-blue-600 hover:underline"
+    >
+      Profile
+    </a>
+  )
+}
+
 export const LeadsList: FC = () => {
   const [selectedLeads, setSelectedLeads] = useState<number[]>([])
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
@@ -246,6 +278,15 @@ export const LeadsList: FC = () => {
                   Country
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                  Phone number
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                  Years at company
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                  LinkedIn URL
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                   Message
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
@@ -285,6 +326,26 @@ export const LeadsList: FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{lead.countryCode || '-'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div
+                      className="text-sm text-gray-900 max-w-[12rem] truncate"
+                      title={lead.phoneNumber ?? undefined}
+                    >
+                      {lead.phoneNumber ? (
+                        <a href={toPhoneHref(lead.phoneNumber)} className="text-blue-600 hover:underline">
+                          {lead.phoneNumber}
+                        </a>
+                      ) : (
+                        '-'
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{lead.yearsAtCompany ?? '-'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <LinkedinCell value={lead.linkedinUrl} />
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900 max-w-xs truncate" title={lead.message || ''}>
