@@ -102,12 +102,13 @@ cd ../frontend && nvm use && pnpm install
 
 ```zsh
 temporal server start-dev -n wt-1 -n wt-2 -n wt-3        # one shared server; namespaces pre-created
+temporal operator namespace create --namespace wt-1      # or add one to an already-running server
 PORT=4001 TEMPORAL_NAMESPACE=wt-1 pnpm run dev           # backend/ in the worktree
 VITE_API_URL=http://localhost:4001 pnpm run dev --port 5174 --strictPort   # frontend/ in the worktree
 ```
 
+- The backend reads `PORT` (default `4000`) and `TEMPORAL_NAMESPACE` (default `default`) via `backend/src/config.ts`; unset means today's single-instance setup. The namespace must exist before the backend starts: otherwise the API comes up briefly, then the worker fails with `Namespace … is not found` and the process exits (nodemon shows "app crashed").
 - **Why a namespace per slot:** it isolates task queues _and_ workflow IDs. Workers on the same queue steal each other's tasks, and lead IDs (hence ID-based workflow IDs) repeat across worktree databases.
-- **Prerequisite — not in the code yet:** the backend hardcodes port `4000` (`index.ts`), Temporal address `localhost:7233`, namespace `default` and task queue `myQueue` (`index.ts`, `worker.ts`). Until a small, reviewed PR makes them configurable (`PORT`, `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`, current values as defaults), **only one backend may run at a time**: verify with automated tests (including Temporal's test environment) and leave the browser check for when the user frees the backend.
 - **Playwright (MCP):** drive only your slot's frontend URL. Artifacts are written to `.playwright-mcp/` in the repo root; uploaded files must be inside the repo (e.g. `docs/*.csv`). Data-changing actions (import, delete, verify) are fine in your own slot; in the user's main slot, ask first.
 
 **File overlap between tasks:** tasks 3 (new fields) and 4 (enrich phone) both change the schema, migrations, `index.ts` and `LeadsList.tsx`, and task 4 needs the phone field — do 4 on top of a merged 3. Two branches adding Prisma migrations at once will conflict. Low-overlap with each other: task 1 (CSV import path), task 2 (Temporal verify-email path), task 5 (read-only review), task 6 (`IMPROVEMENTS.md`).
@@ -117,7 +118,8 @@ VITE_API_URL=http://localhost:4001 pnpm run dev --port 5174 --strictPort   # fro
 **Backend** (`backend/src`)
 
 - `index.ts` — the entire Express API (all `/leads` routes, hand-rolled CORS) **and** it starts the Temporal worker via `runTemporalWorker()`. Prisma client is created here.
-- `worker.ts` — Temporal worker: namespace `default`, task queue `myQueue`, workflows loaded from `./workflows`, activities from `./workflows/activities`.
+- `config.ts` — runtime settings (port, Temporal address/namespace/task queue); the single place for them.
+- `worker.ts` — Temporal worker on the configured namespace and task queue (`myQueue`); workflows loaded from `./workflows`, activities from `./workflows/activities`.
 - `workflows/workflows.ts` — workflow definitions (runs in Temporal's deterministic sandbox: no I/O there, only via activities). `workflows/activities/` — activity implementations (currently the stubbed `verifyEmail`, which simulates an external service).
 - `POST /leads/verify-emails` connects a Temporal client per request and `await`s `client.workflow.execute(...)` for each lead sequentially, inside the HTTP request.
 - `utils/messageGenerator.ts` — `{fieldName}` template substitution; throws on unknown or empty fields.
