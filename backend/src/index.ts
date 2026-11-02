@@ -279,12 +279,9 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
     const connection = await Connection.connect({ address: config.temporal.address })
     const client = new Client({ connection, namespace: config.temporal.namespace })
 
-    let verifiedCount = 0
-    const results: Array<{ leadId: number; emailVerified: boolean }> = []
-    const errors: Array<{ leadId: number; leadName: string; error: string }> = []
-
-    for (const lead of leads) {
-      try {
+    // In parallel, so one slow lead doesn't delay (or block) the others.
+    const outcomes = await Promise.allSettled(
+      leads.map(async (lead) => {
         const isVerified = await client.workflow.execute(verifyEmailWorkflow, {
           taskQueue: config.temporal.taskQueue,
           workflowId: `verify-email-${lead.id}-${Date.now()}`,
@@ -296,16 +293,27 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
           data: { emailVerified: Boolean(isVerified) },
         })
 
-        results.push({ leadId: lead.id, emailVerified: isVerified })
-        verifiedCount += 1
-      } catch (error) {
+        return isVerified
+      })
+    )
+
+    const results: Array<{ leadId: number; emailVerified: boolean }> = []
+    const errors: Array<{ leadId: number; leadName: string; error: string }> = []
+
+    // A failed lead keeps emailVerified unchanged: "couldn't verify" is not "invalid".
+    outcomes.forEach((outcome, index) => {
+      const lead = leads[index]
+      if (outcome.status === 'fulfilled') {
+        results.push({ leadId: lead.id, emailVerified: outcome.value })
+      } else {
         errors.push({
           leadId: lead.id,
           leadName: `${lead.firstName} ${lead.lastName}`.trim(),
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: outcome.reason instanceof Error ? outcome.reason.message : 'Unknown error',
         })
       }
-    }
+    })
+    const verifiedCount = results.length
 
     await connection.close()
 
