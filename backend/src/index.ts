@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express'
 import { Connection, Client } from '@temporalio/client'
 import { verifyEmailWorkflow } from './workflows'
 import { generateMessageFromTemplate } from './utils/messageGenerator'
+import { normalizeCountryCode } from './utils/countryCode'
 import { runTemporalWorker } from './worker'
 import { loadConfig } from './config'
 
@@ -170,6 +171,8 @@ app.post('/leads/generate-messages', async (req: Request, res: Response) => {
   }
 })
 
+const MAX_WARNING_VALUE_LENGTH = 50
+
 app.post('/leads/bulk', async (req: Request, res: Response) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'Request body is required and must be valid JSON' })
@@ -221,20 +224,34 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
 
     let importedCount = 0
     const errors: Array<{ lead: any; error: string }> = []
+    const warnings: Array<{ lead: string; field: string; label: string; value: string }> = []
 
     for (const lead of uniqueLeads) {
       try {
-        await prisma.lead.create({
+        const countryCode = normalizeCountryCode(lead.countryCode)
+        const created = await prisma.lead.create({
           data: {
             firstName: lead.firstName.trim(),
             lastName: lead.lastName.trim(),
             email: lead.email.trim(),
             jobTitle: lead.jobTitle ? lead.jobTitle.trim() : null,
-            countryCode: lead.countryCode ? lead.countryCode.trim() : null,
+            countryCode,
             companyName: lead.companyName ? lead.companyName.trim() : null,
           },
         })
         importedCount++
+
+        // An invalid optional value is cleared rather than dropping the lead; report it so the user knows.
+        // Only string input is echoed back, bounded so a garbage value can't bloat the response or the toast.
+        const rawCountryCode = typeof lead.countryCode === 'string' ? lead.countryCode.trim() : ''
+        if (countryCode === null && rawCountryCode) {
+          warnings.push({
+            lead: `${created.firstName} ${created.lastName}`,
+            field: 'countryCode',
+            label: 'Country code',
+            value: rawCountryCode.slice(0, MAX_WARNING_VALUE_LENGTH),
+          })
+        }
       } catch (error) {
         errors.push({
           lead: lead,
@@ -249,6 +266,7 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
       duplicatesSkipped: validLeads.length - uniqueLeads.length,
       invalidLeads: leads.length - validLeads.length,
       errors,
+      warnings,
     })
   } catch (error) {
     console.error('Error importing leads:', error)
