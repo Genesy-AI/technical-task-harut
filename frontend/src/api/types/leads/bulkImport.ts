@@ -18,4 +18,13 @@ export interface LeadsBulkImportOutput {
     lead: any
     error: string
   }>
+  /** Optional values that failed backend validation and were stored as empty. */
+  warnings: BulkImportWarning[]
+}
+
+export interface BulkImportWarning {
+  lead: string
+  field: string
+  label: string
+  value: string
 }
