@@ -223,4 +223,62 @@ Jane,Johnson,jane@example.com`
     expect(result[0].email).toBe('john@example.com')
     expect(result[0].isValid).toBe(true)
   })
+
+  it('should map the contact field headers from the sample CSV', () => {
+    const csv = `firstName,lastName,email,jobTitle,countryCode,companyName,yearsInRole,phoneNumber
+Chad,Smith,hancockjames@gmail.com,Child psychotherapist,TV,Global Tech Solutions,2,+1-280-754-0462x2154`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.yearsAtCompany).toBe('2')
+    expect(lead.phoneNumber).toBe('+1-280-754-0462x2154')
+    expect(lead.isValid).toBe(true)
+  })
+
+  it('should accept header aliases for the contact fields', () => {
+    const csv = `firstName,lastName,email,phone,years_at_company,linkedin
+Jane,Doe,jane@example.com,(731)123-9702,0,linkedin.com/in/jane`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.phoneNumber).toBe('(731)123-9702')
+    expect(lead.yearsAtCompany).toBe('0')
+    expect(lead.linkedinUrl).toBe('linkedin.com/in/jane')
+  })
+
+  it('should map the canonical contact field headers', () => {
+    const csv = `firstName,lastName,email,phoneNumber,yearsAtCompany,linkedinUrl
+Jane,Doe,jane@example.com,555-123-4567,12,https://www.linkedin.com/in/jane`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.phoneNumber).toBe('555-123-4567')
+    expect(lead.yearsAtCompany).toBe('12')
+    expect(lead.linkedinUrl).toBe('https://www.linkedin.com/in/jane')
+  })
+
+  it('should pass invalid contact values through for the backend to validate', () => {
+    const csv = `firstName,lastName,email,phone,yearsInRole,linkedin
+Jane,Doe,jane@example.com,abc,2.5,foo.com`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead).toMatchObject({
+      phoneNumber: 'abc',
+      yearsAtCompany: '2.5',
+      linkedinUrl: 'foo.com',
+      isValid: true,
+    })
+  })
+
+  it('should leave empty contact fields undefined', () => {
+    const csv = `firstName,lastName,email,phone,yearsInRole,linkedin
+Jane,Doe,jane@example.com,,,`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.phoneNumber).toBeUndefined()
+    expect(lead.yearsAtCompany).toBeUndefined()
+    expect(lead.linkedinUrl).toBeUndefined()
+  })
 })

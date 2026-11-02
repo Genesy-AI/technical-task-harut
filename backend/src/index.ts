@@ -3,7 +3,7 @@ import express, { Request, Response } from 'express'
 import { Connection, Client } from '@temporalio/client'
 import { verifyEmailWorkflow } from './workflows'
 import { generateMessageFromTemplate } from './utils/messageGenerator'
-import { normalizeCountryCode } from './utils/countryCode'
+import { InvalidLeadField, LEAD_FIELDS, normalizeLeadFields } from './utils/leadFields'
 import { runTemporalWorker } from './worker'
 import { loadConfig } from './config'
 
@@ -40,6 +40,11 @@ app.post('/leads', async (req: Request, res: Response) => {
     },
   })
   res.json(lead)
+})
+
+// Registered before `/leads/:id`, otherwise "fields" would be treated as an id.
+app.get('/leads/fields', (req: Request, res: Response) => {
+  res.json(LEAD_FIELDS.map(({ key, label }) => ({ key, label })))
 })
 
 app.get('/leads/:id', async (req: Request, res: Response) => {
@@ -171,8 +176,6 @@ app.post('/leads/generate-messages', async (req: Request, res: Response) => {
   }
 })
 
-const MAX_WARNING_VALUE_LENGTH = 50
-
 app.post('/leads/bulk', async (req: Request, res: Response) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'Request body is required and must be valid JSON' })
@@ -224,34 +227,17 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
 
     let importedCount = 0
     const errors: Array<{ lead: any; error: string }> = []
-    const warnings: Array<{ lead: string; field: string; label: string; value: string }> = []
+    const warnings: Array<{ lead: string } & InvalidLeadField> = []
 
     for (const lead of uniqueLeads) {
       try {
-        const countryCode = normalizeCountryCode(lead.countryCode)
-        const created = await prisma.lead.create({
-          data: {
-            firstName: lead.firstName.trim(),
-            lastName: lead.lastName.trim(),
-            email: lead.email.trim(),
-            jobTitle: lead.jobTitle ? lead.jobTitle.trim() : null,
-            countryCode,
-            companyName: lead.companyName ? lead.companyName.trim() : null,
-          },
-        })
+        const { values, invalid } = normalizeLeadFields(lead)
+        // Required fields come from the validated lead (the filter above), not from the nullable normalized values.
+        const firstName = lead.firstName.trim()
+        const lastName = lead.lastName.trim()
+        await prisma.lead.create({ data: { ...values, firstName, lastName, email: lead.email.trim() } })
         importedCount++
-
-        // An invalid optional value is cleared rather than dropping the lead; report it so the user knows.
-        // Only string input is echoed back, bounded so a garbage value can't bloat the response or the toast.
-        const rawCountryCode = typeof lead.countryCode === 'string' ? lead.countryCode.trim() : ''
-        if (countryCode === null && rawCountryCode) {
-          warnings.push({
-            lead: `${created.firstName} ${created.lastName}`,
-            field: 'countryCode',
-            label: 'Country code',
-            value: rawCountryCode.slice(0, MAX_WARNING_VALUE_LENGTH),
-          })
-        }
+        warnings.push(...invalid.map((field) => ({ lead: `${firstName} ${lastName}`, ...field })))
       } catch (error) {
         errors.push({
           lead: lead,

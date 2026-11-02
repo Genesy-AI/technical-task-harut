@@ -1,37 +1,25 @@
-export interface Lead {
-  firstName: string
-  lastName?: string | null
-  email?: string | null
-  jobTitle?: string | null
-  companyName?: string | null
-  countryCode?: string | null
-}
+import type { lead as PrismaLead } from '@prisma/client'
+import { isLeadFieldKey, LeadFieldKey } from './leadFields'
+
+export type Lead = { firstName: string } & { [K in LeadFieldKey]?: PrismaLead[K] | null }
 
 export function generateMessageFromTemplate(template: string, lead: Lead): string {
   let message = template
-
-  const availableFields = {
-    firstName: lead.firstName,
-    lastName: lead.lastName,
-    email: lead.email,
-    jobTitle: lead.jobTitle,
-    companyName: lead.companyName,
-    countryCode: lead.countryCode,
-  }
 
   const templateVariables = template.match(/\{(\w+)\}/g) || []
 
   for (const variable of templateVariables) {
     const fieldName = variable.slice(1, -1)
 
-    if (fieldName in availableFields) {
-      const fieldValue = availableFields[fieldName as keyof typeof availableFields]
+    if (isLeadFieldKey(fieldName)) {
+      const fieldValue = lead[fieldName]
 
       if (fieldValue === null || fieldValue === undefined || fieldValue === '') {
         throw new Error(`Missing required field: ${fieldName}`)
       }
 
-      message = message.replace(new RegExp(`\\{${fieldName}\\}`, 'g'), fieldValue)
+      // A replacer function inserts the value literally; a string would expand `$&`, `$1` etc. in lead data.
+      message = message.replace(new RegExp(`\\{${fieldName}\\}`, 'g'), () => String(fieldValue))
     } else {
       throw new Error(`Unknown field in template: ${fieldName}`)
     }

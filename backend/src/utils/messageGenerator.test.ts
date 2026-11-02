@@ -206,4 +206,51 @@ describe('generateMessageFromTemplate', () => {
       expect(result).toBe('Hi John 😊 from TechCorp 🚀!')
     })
   })
+
+  describe('contact fields', () => {
+    const contactLead: Lead = {
+      firstName: 'Ana',
+      phoneNumber: '+1-280-754-0462x2154',
+      yearsAtCompany: 3,
+      linkedinUrl: 'https://www.linkedin.com/in/ana',
+    }
+
+    it('should replace phone number, years at company and LinkedIn URL', () => {
+      const template = 'Hi {firstName}, {yearsAtCompany} years in! Call {phoneNumber} or see {linkedinUrl}'
+      const result = generateMessageFromTemplate(template, contactLead)
+      expect(result).toBe(
+        'Hi Ana, 3 years in! Call +1-280-754-0462x2154 or see https://www.linkedin.com/in/ana'
+      )
+    })
+
+    it('should render 0 years at company as "0"', () => {
+      const result = generateMessageFromTemplate('{yearsAtCompany} years', {
+        firstName: 'Ana',
+        yearsAtCompany: 0,
+      })
+      expect(result).toBe('0 years')
+    })
+
+    it('should throw for a missing contact field', () => {
+      expect(() =>
+        generateMessageFromTemplate('Call {phoneNumber}', { firstName: 'Ana', phoneNumber: null })
+      ).toThrow('Missing required field: phoneNumber')
+      expect(() => generateMessageFromTemplate('{yearsAtCompany} years', { firstName: 'Ana' })).toThrow(
+        'Missing required field: yearsAtCompany'
+      )
+    })
+
+    it('should reject lead columns that are not template fields', () => {
+      expect(() => generateMessageFromTemplate('{message}', contactLead)).toThrow(
+        'Unknown field in template: message'
+      )
+    })
+  })
+  it('inserts values literally, even when they contain $ replacement patterns', () => {
+    const lead: Lead = { firstName: "a$&b$'c$1", linkedinUrl: 'https://linkedin.com/in/a$&b' }
+
+    expect(generateMessageFromTemplate('Hi {firstName}, see {linkedinUrl}', lead)).toBe(
+      "Hi a$&b$'c$1, see https://linkedin.com/in/a$&b"
+    )
+  })
 })
